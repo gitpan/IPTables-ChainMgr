@@ -10,7 +10,7 @@
 #
 # Author: Michael Rash (mbr@cipherdyne.org)
 #
-# Version: 0.8
+# Version: 0.9
 #
 ##############################################################################
 #
@@ -20,7 +20,7 @@
 package IPTables::ChainMgr;
 
 use 5.006;
-use POSIX ":sys_wait_h";
+use POSIX ':sys_wait_h';
 use Carp;
 use IPTables::Parse;
 use Net::IPv4Addr 'ipv4_network';
@@ -28,7 +28,7 @@ use strict;
 use warnings;
 use vars qw($VERSION);
 
-$VERSION = '0.8';
+$VERSION = '0.9';
 
 sub new() {
     my $class = shift;
@@ -155,7 +155,7 @@ sub append_ip_rule() {
         if ($extended_href) {
             $msg = "Table: $table, chain: $chain, $normalized_src -> " .
                 "$normalized_dst ";
-            for my $key qw(protocol s_port d_port) {
+            for my $key qw(protocol s_port d_port mac_source) {
                 $msg .= "$key $extended_href->{$key} "
                     if defined $extended_href->{$key};
             }
@@ -182,11 +182,13 @@ sub append_ip_rule() {
         $ipt_cmd .= "-d $normalized_dst ";
         $ipt_cmd .= "--dport $extended_href->{'d_port'} "
             if defined $extended_href->{'d_port'};
+        $ipt_cmd .= "-m mac --mac-source $extended_href->{'mac_source'} "
+            if defined $extended_href->{'mac_source'};
         $ipt_cmd .= "-j $target";
 
         $msg = "Table: $table, chain: $chain, added $normalized_src " .
             "-> $normalized_dst ";
-        for my $key qw(protocol s_port d_port) {
+        for my $key qw(protocol s_port d_port mac_source) {
             $msg .= "$key $extended_href->{$key} "
                 if defined $extended_href->{$key};
         }
@@ -242,7 +244,7 @@ sub add_ip_rule() {
         if ($extended_href) {
             $msg = "Table: $table, chain: $chain, $normalized_src -> " .
                 "$normalized_dst ";
-            for my $key qw(protocol s_port d_port) {
+            for my $key qw(protocol s_port d_port mac_source) {
                 $msg .= "$key $extended_href->{$key} "
                     if defined $extended_href->{$key};
             }
@@ -279,11 +281,13 @@ sub add_ip_rule() {
         $ipt_cmd .= "-d $normalized_dst ";
         $ipt_cmd .= "--dport $extended_href->{'d_port'} "
             if defined $extended_href->{'d_port'};
+        $ipt_cmd .= "-m mac --mac-source $extended_href->{'mac_source'} "
+            if defined $extended_href->{'mac_source'};
         $ipt_cmd .= "-j $target";
 
         $msg = "Table: $table, chain: $chain, added $normalized_src " .
             "-> $normalized_dst ";
-        for my $key qw(protocol s_port d_port) {
+        for my $key qw(protocol s_port d_port mac_source) {
             $msg .= "$key $extended_href->{$key} "
                 if defined $extended_href->{$key};
         }
@@ -340,7 +344,7 @@ sub delete_ip_rule() {
 
     my $extended_msg = '';
     if ($extended_href) {
-        for my $key qw(protocol s_port d_port) {
+        for my $key qw(protocol s_port d_port mac_source) {
             $extended_msg .= "$key: $extended_href->{$key} "
                 if defined $extended_href->{$key};
         }
@@ -386,7 +390,7 @@ sub find_ip_rule() {
     $fh = *STDOUT if $verbose;
 
     if ($debug or $verbose) {
-        print $fh localtime() . " [+] IPTables::Parse::VERSION",
+        print $fh localtime() . " [+] IPTables::Parse::VERSION ",
             "$IPTables::Parse::VERSION\n"
     }
 
@@ -665,8 +669,9 @@ IPTables::ChainMgr - Perl extension for manipulating iptables policies
       ### flush all rules from the chain
       $ipt_obj->flush_chain('filter', 'CUSTOM');
 
-      ### now delete the chain
-      $ipt_obj->delete_chain('filter', 'CUSTOM');
+      ### now delete the chain (along with any jump rule in the
+      ### INPUT chain)
+      $ipt_obj->delete_chain('filter', 'INPUT', 'CUSTOM');
   }
 
   # create new iptables chain in the 'filter' table
@@ -764,16 +769,18 @@ values are returned:
 The flush_chain() function in the example above executes the iptables command
 "/sbin/iptables -t filter -F CUSTOM"
 
-=item delete_chain($table, $chain)
+=item delete_chain($table, $jump_from_chain, $chain)
 
-This function deletes a chain from the specified table:
+This function deletes a chain from the specified table along with any jump
+rule to which packets are jumped into this chain:
 
-  ($rv, $out_ar, $errs_ar) = $ipt_obj->delete_chain('filter', 'CUSTOM');
+  ($rv, $out_ar, $errs_ar) = $ipt_obj->delete_chain('filter', 'INPUT', 'CUSTOM');
 
 Internally a check is performed to see whether the chain exists within
-the table, and global jump rules from other chains within the table that
-reference the specified chain are also deleted (a chain cannot be deleted
-until there are no references to it).
+the table, and global jump rules are removed from the jump chain before
+deletion (a chain cannot be deleted until there are no references to it).
+In the example above, the CUSTOM chain is deleted after any jump rule
+to this chain from the INPUT chain is also deleted.
 
 =item find_ip_rule($src, $dst, $table, $chain, $target, %extended_info)
 
@@ -873,6 +880,7 @@ Thanks to the following people:
 
   Franck Joncourt <franck.mail@dthconnex.com>
   Grant Ferley
+  Darien Kindlund
 
 =head1 AUTHOR
 
