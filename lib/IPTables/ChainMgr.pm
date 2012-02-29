@@ -10,7 +10,7 @@
 #
 # Author: Michael Rash (mbr@cipherdyne.org)
 #
-# Version: 0.9.9
+# Version: 1.0
 #
 ##############################################################################
 #
@@ -26,7 +26,7 @@ use strict;
 use warnings;
 use vars qw($VERSION);
 
-$VERSION = '0.9.9';
+$VERSION = '1.0';
 
 sub new() {
     my $class = shift;
@@ -288,6 +288,10 @@ sub add_ip_rule() {
             if defined $extended_href->{'d_port'};
         $ipt_cmd .= "-m mac --mac-source $extended_href->{'mac_source'} "
             if defined $extended_href->{'mac_source'};
+        $ipt_cmd .= "-m state --state $extended_href->{'state'} "
+            if defined $extended_href->{'state'};
+        $ipt_cmd .= "-m conntrack --ctstate $extended_href->{'ctstate'} "
+            if defined $extended_href->{'ctstate'};
         $ipt_cmd .= "-j $target";
 
         $msg = "Table: $table, chain: $chain, added $normalized_src " .
@@ -420,11 +424,25 @@ sub find_ip_rule() {
                     d_port
                     to_ip
                     to_port
+                    state
+                    ctstate
                 )) {
                     if (defined $extended_href->{$key}) {
-                        unless ($extended_href->{$key}
-                                eq $rule_href->{$key}) {
-                            $found = 0
+                        if ($key eq 'state' or $key eq 'ctstate') {
+                            ### make sure that state ordering as reported
+                            ### by iptables is accounted for vs. what was
+                            ### supplied to the module
+                            unless (&state_compare($extended_href->{$key},
+                                    $rule_href->{$key})) {
+                                $found = 0;
+                                last;
+                            }
+                        } else {
+                            unless ($extended_href->{$key}
+                                    eq $rule_href->{$key}) {
+                                $found = 0;
+                                last;
+                            }
                         }
                     }
                 }
@@ -447,6 +465,37 @@ sub find_ip_rule() {
         $rulenum++;
     }
     return 0, $#$chain_aref+1;
+}
+
+sub state_compare() {
+    my ($state_str1, $state_str2) = @_;
+
+    my @states1 = split /,/, $state_str1;
+    my @states2 = split /,/, $state_str2;
+
+    for my $state1 (@states1) {
+        my $found = 0;
+        for my $state2 (@states2) {
+            if ($state1 eq $state2) {
+                $found = 1;
+                last;
+            }
+        }
+        return 0 unless $found;
+    }
+
+    for my $state2 (@states2) {
+        my $found = 0;
+        for my $state1 (@states1) {
+            if ($state2 eq $state1) {
+                $found = 1;
+                last;
+            }
+        }
+        return 0 unless $found;
+    }
+
+    return 1;
 }
 
 sub normalize_net() {
@@ -955,6 +1004,11 @@ lists:
 The latest version of the IPTables::ChainMgr extension can be found at:
 
 http://www.cipherdyne.org/modules/
+
+Source control is provided by git:
+
+http://www.cipherdyne.org/git/IPTables-ChainMgr.git
+http://www.cipherdyne.org/cgi-bin/gitweb.cgi?p=IPTables-ChainMgr.git;a=summary
 
 =head1 CREDITS
 
